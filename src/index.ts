@@ -1,87 +1,54 @@
-import * as path from 'path';
-
-import { config } from 'dotenv';
-const ENV_FILE = path.join(__dirname, '..', '.env');
-config({ path: ENV_FILE });
-
 import * as restify from 'restify';
-
-import { INodeSocket } from 'botframework-streaming';
-
-// Import required bot services.
-// See https://aka.ms/bot-services to learn more about the different parts of a bot.
-import {
-    CloudAdapter,
-    ConfigurationServiceClientCredentialFactory,
-    createBotFrameworkAuthenticationFromConfiguration
-} from 'botbuilder';
-
-// This bot's main dialog.
+import { config } from 'dotenv';
+import { CloudAdapter, ConfigurationServiceClientCredentialFactory, createBotFrameworkAuthenticationFromConfiguration } from 'botbuilder';
 import { EchoBot } from './bot';
+import axios from 'axios';
 
+config({ path: './.env' });  // Charger les variables d'environnement
 
-// Create HTTP server.
+// Créer le serveur Restify
 const server = restify.createServer();
 server.use(restify.plugins.bodyParser());
 
-server.listen(process.env.port || process.env.PORT || 3978, () => {
-    console.log(`\n${server.name} listening to ${server.url}`);
-    console.log('\nGet Bot Framework Emulator: https://aka.ms/botframework-emulator');
-    console.log('\nTo talk to your bot, open the emulator select "Open Bot"');
+// Route pour vérifier le webhook
+server.get('/webhook', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    // Vérification du token de Meta
+    if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+        console.log('Webhook vérifié avec succès.');
+        res.send(challenge); // Retourne le challenge pour valider le webhook
+    } else {
+        console.error('Échec de la vérification du webhook.');
+        res.send(403, 'Forbidden');  // Si le token ne correspond pas
+    }
 });
 
+// Configuration de l'adaptateur Bot Framework
 const credentialsFactory = new ConfigurationServiceClientCredentialFactory({
     MicrosoftAppId: process.env.MicrosoftAppId,
     MicrosoftAppPassword: process.env.MicrosoftAppPassword,
-    MicrosoftAppType: process.env.MicrosoftAppType,
-    MicrosoftAppTenantId: process.env.MicrosoftAppTenantId
 });
-
 const botFrameworkAuthentication = createBotFrameworkAuthenticationFromConfiguration(null, credentialsFactory);
-
-// Create adapter.
-// See https://aka.ms/about-bot-adapter to learn more about adapters.
 const adapter = new CloudAdapter(botFrameworkAuthentication);
 
-// Catch-all for errors.
-const onTurnErrorHandler = async (context, error) => {
-    // This check writes out errors to console log .vs. app insights.
-    // NOTE: In production environment, you should consider logging this to Azure
-    //       application insights.
-    console.error(`\n [onTurnError] unhandled error: ${ error }`);
-
-    // Send a trace activity, which will be displayed in Bot Framework Emulator
-    await context.sendTraceActivity(
-        'OnTurnError Trace',
-        `${ error }`,
-        'https://www.botframework.com/schemas/error',
-        'TurnError'
-    );
-
-    // Send a message to the user
-    await context.sendActivity('The bot encountered an error or bug.');
-    await context.sendActivity('To continue to run this bot, please fix the bot source code.');
-};
-
-// Set the onTurnError for the singleton CloudAdapter.
-adapter.onTurnError = onTurnErrorHandler;
-
-// Create the main dialog.
+// Création du bot (EchoBot)
 const myBot = new EchoBot();
 
-// Listen for incoming requests.
+// Route pour recevoir les messages du Bot Framework
 server.post('/api/messages', async (req, res) => {
-    // Route received a request to adapter for processing
     await adapter.process(req, res, (context) => myBot.run(context));
 });
 
-// Listen for Upgrade requests for Streaming.
+// WebSocket pour gérer les connexions en streaming
 server.on('upgrade', async (req, socket, head) => {
-    // Create an adapter scoped to this WebSocket connection to allow storing session data.
     const streamingAdapter = new CloudAdapter(botFrameworkAuthentication);
+    await streamingAdapter.process(req, socket as any, head, (context) => myBot.run(context));
+});
 
-    // Set onTurnError for the CloudAdapter created for each connection.
-    streamingAdapter.onTurnError = onTurnErrorHandler;
-
-    await streamingAdapter.process(req, socket as unknown as INodeSocket, head, (context) => myBot.run(context));
+// Lancer le serveur sur le port spécifié
+server.listen(process.env.port || process.env.PORT || 3978, () => {
+    console.log(`Server is listening at ${server.url}`);
 });
