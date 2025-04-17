@@ -1,62 +1,87 @@
 import * as path from 'path';
-import { config } from 'dotenv';
-import * as restify from 'restify';
-import axios from 'axios';
 
-// Charger les variables d'environnement
+import { config } from 'dotenv';
 const ENV_FILE = path.join(__dirname, '..', '.env');
 config({ path: ENV_FILE });
 
-// Créer un serveur Restify
+import * as restify from 'restify';
+
+import { INodeSocket } from 'botframework-streaming';
+
+// Import required bot services.
+// See https://aka.ms/bot-services to learn more about the different parts of a bot.
+import {
+    CloudAdapter,
+    ConfigurationServiceClientCredentialFactory,
+    createBotFrameworkAuthenticationFromConfiguration
+} from 'botbuilder';
+
+// This bot's main dialog.
+import { EchoBot } from './bot';
+
+
+// Create HTTP server.
 const server = restify.createServer();
 server.use(restify.plugins.bodyParser());
 
 server.listen(process.env.port || process.env.PORT || 3978, () => {
     console.log(`\n${server.name} listening to ${server.url}`);
-    console.log('\nBot is ready to send WhatsApp messages!');
+    console.log('\nGet Bot Framework Emulator: https://aka.ms/botframework-emulator');
+    console.log('\nTo talk to your bot, open the emulator select "Open Bot"');
 });
 
-// Route pour vérifier le webhook (requête GET envoyée par Meta pour valider l'URL)
-server.get('/webhook', async (req, res, next) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    // Vérification du token de vérification
-    if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-        console.log('Webhook vérifié avec succès.');
-        res.send(challenge);  // Retourner le challenge pour valider le webhook
-    } else {
-        console.error('Échec de la vérification du webhook.');
-        res.send(403, 'Forbidden');  // Si le token ne correspond pas
-    }
-
-    next();  // Toujours appeler next() pour signaler que le traitement est terminé
+const credentialsFactory = new ConfigurationServiceClientCredentialFactory({
+    MicrosoftAppId: process.env.MicrosoftAppId,
+    MicrosoftAppPassword: process.env.MicrosoftAppPassword,
+    MicrosoftAppType: process.env.MicrosoftAppType,
+    MicrosoftAppTenantId: process.env.MicrosoftAppTenantId
 });
 
-// Fonction pour envoyer un message via WhatsApp Business API
-const sendMessageToWhatsApp = async (to: string, text: string) => {
-    try {
-        const response = await axios.post(
-            `https://graph.facebook.com/v14.0/${process.env.WHATSAPP_PHONE_ID}/messages`, 
-            {
-                messaging_product: 'whatsapp',
-                to: to,
-                text: { body: text }
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-        console.log('Message envoyé à WhatsApp:', response.data);
-    } catch (error) {
-        console.error('Erreur lors de l\'envoi du message à WhatsApp:', error);
-    }
+const botFrameworkAuthentication = createBotFrameworkAuthenticationFromConfiguration(null, credentialsFactory);
+
+// Create adapter.
+// See https://aka.ms/about-bot-adapter to learn more about adapters.
+const adapter = new CloudAdapter(botFrameworkAuthentication);
+
+// Catch-all for errors.
+const onTurnErrorHandler = async (context, error) => {
+    // This check writes out errors to console log .vs. app insights.
+    // NOTE: In production environment, you should consider logging this to Azure
+    //       application insights.
+    console.error(`\n [onTurnError] unhandled error: ${ error }`);
+
+    // Send a trace activity, which will be displayed in Bot Framework Emulator
+    await context.sendTraceActivity(
+        'OnTurnError Trace',
+        `${ error }`,
+        'https://www.botframework.com/schemas/error',
+        'TurnError'
+    );
+
+    // Send a message to the user
+    await context.sendActivity('The bot encountered an error or bug.');
+    await context.sendActivity('To continue to run this bot, please fix the bot source code.');
 };
 
-// Exemple d'envoi de message (à tester selon ton besoin)
-sendMessageToWhatsApp('<RECIPIENT_PHONE_NUMBER>', 'Hello from your bot!');
+// Set the onTurnError for the singleton CloudAdapter.
+adapter.onTurnError = onTurnErrorHandler;
 
+// Create the main dialog.
+const myBot = new EchoBot();
+
+// Listen for incoming requests.
+server.post('/api/messages', async (req, res) => {
+    // Route received a request to adapter for processing
+    await adapter.process(req, res, (context) => myBot.run(context));
+});
+
+// Listen for Upgrade requests for Streaming.
+server.on('upgrade', async (req, socket, head) => {
+    // Create an adapter scoped to this WebSocket connection to allow storing session data.
+    const streamingAdapter = new CloudAdapter(botFrameworkAuthentication);
+
+    // Set onTurnError for the CloudAdapter created for each connection.
+    streamingAdapter.onTurnError = onTurnErrorHandler;
+
+    await streamingAdapter.process(req, socket as unknown as INodeSocket, head, (context) => myBot.run(context));
+});
