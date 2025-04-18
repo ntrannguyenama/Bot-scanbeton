@@ -29,6 +29,8 @@ server.get('/', (req, res, next) => {
     const challenge = req.query['hub.challenge'];
     const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
 
+    console.log('📩 Requête webhook reçue :', { mode, token, challenge });
+
     if (mode === 'subscribe' && token === verifyToken) {
         console.log('✅ Webhook WhatsApp vérifié avec succès.');
         res.send(200, challenge);
