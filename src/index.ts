@@ -23,6 +23,9 @@ import { EchoBot } from './bot';
 // Create HTTP server.
 const server = restify.createServer();
 
+server.use(restify.plugins.queryParser());
+
+
 server.get('/', (req, res, next) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
