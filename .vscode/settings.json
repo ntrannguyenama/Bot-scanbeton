@@ -1,0 +1,8 @@
+{
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
+    ],
+    "appService.defaultWebAppToDeploy": "/subscriptions/ae1c9d21-4a9e-418d-ad67-ebe3a99b4096/resourceGroups/ai/providers/Microsoft.Web/sites/scanbeton-vocalbot",
+    "appService.deploySubpath": "."
+}

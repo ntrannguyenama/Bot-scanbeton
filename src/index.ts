@@ -25,8 +25,8 @@ const server = restify.createServer();
 
 server.use(restify.plugins.queryParser());
 
-
-server.get('/', (req, res, next) => {
+console.log('v8')
+server.get('/webhook', (req, res, next) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
@@ -36,7 +36,7 @@ server.get('/', (req, res, next) => {
 
     if (mode === 'subscribe' && token === verifyToken) {
         console.log('✅ Webhook WhatsApp vérifié avec succès.');
-        res.send(200, challenge);
+        res.send(200, parseInt(challenge));
     } else {
         console.error('❌ Échec de la vérification du webhook WhatsApp.');
         res.send(403, 'Forbidden');
@@ -45,13 +45,63 @@ server.get('/', (req, res, next) => {
     return next();
 });
 
+server.post('/webhook', (req, res, next) => {
+    try {
+      const body = req.body;
+      console.log('Webhook reçu:', JSON.stringify(body, null, 2));
+   
+      if (
+        body.object === 'whatsapp_business_account' &&
+        Array.isArray(body.entry) &&
+        body.entry.length > 0
+      ) {
+        for (const entry of body.entry) {
+          if (Array.isArray(entry.changes) && entry.changes.length > 0) {
+            for (const change of entry.changes) {
+              if (change.field === 'messages') {
+                const messages = change.value?.messages || [];
+                for (const message of messages) {
+                  const enhancedMessage = {
+                    ...message,
+                    phone_number_id: change?.value?.metadata?.phone_number_id,
+                  };
+   
+                  if (message.type === 'text') {
+                    console.log('whatsapp.text', enhancedMessage);
+                  } else if (message.type === 'order') {
+                    console.log('whatsapp.order', enhancedMessage);
+                  } else if (
+                    message.type === 'interactive' &&
+                    enhancedMessage.interactive?.type === 'button_reply'
+                  ) {
+                    console.log('whatsapp.reply', enhancedMessage);
+                  }
+                }
+              }
+   
+              if (change.field === 'statuses') {
+                const statuses = change.value?.statuses || [];
+                for (const status of statuses) {
+                  console.log('Statut reçu:', status);
+                  // Ajoute ici ta logique pour les statuts
+                }
+              }
+            }
+          }
+        }
+      }
+   
+      res.send(200); // Toujours répondre 200 sinon WhatsApp renvoie l’événement
+    } catch (error) {
+      console.error('Erreur lors du traitement du webhook:', error.message);
+      res.send(500, 'Erreur interne');
+    }
+   
+    return next();
+  });
+
 server.use(restify.plugins.bodyParser());
 
-server.listen(process.env.port || process.env.PORT || 3978, () => {
-    console.log(`\n${server.name} listening to ${server.url}`);
-    console.log('\nGet Bot Framework Emulator: https://aka.ms/botframework-emulator');
-    console.log('\nTo talk to your bot, open the emulator select "Open Bot"');
-});
 
 const credentialsFactory = new ConfigurationServiceClientCredentialFactory({
     MicrosoftAppId: process.env.MicrosoftAppId,
@@ -107,4 +157,11 @@ server.on('upgrade', async (req, socket, head) => {
     streamingAdapter.onTurnError = onTurnErrorHandler;
 
     await streamingAdapter.process(req, socket as unknown as INodeSocket, head, (context) => myBot.run(context));
+});
+
+
+server.listen(process.env.port || process.env.PORT || 3978, () => {
+    console.log(`\n${server.name} listening to ${server.url}`);
+    console.log('\nGet Bot Framework Emulator: https://aka.ms/botframework-emulator');
+    console.log('\nTo talk to your bot, open the emulator select "Open Bot"');
 });
