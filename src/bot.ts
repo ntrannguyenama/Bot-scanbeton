@@ -36,7 +36,7 @@ async function searchCognitiveIndex(query: string, topK = 3): Promise<string[]> 
 
 // 💬 Appel Azure OpenAI GPT-4 (via Foundry) en mode souple
 async function generateResponse(question: string, contextChunks: string[]): Promise<string> {
-    const url = `${OPENAI_ENDPOINT}/openai/deployments/${OPENAI_CHAT_DEPLOYMENT}/chat/completions?api-version=${OPENAI_API_VERSION}`;
+    const url = `https://scanbeton-api.openai.azure.com/openai/deployments/scanbeton-gpt-35-turbo/chat/completions?api-version=2025-01-01-preview`;
 
     const systemPrompt = `Tu es un assistant intelligent. Si le contexte ci-dessous est utile, utilise-le pour répondre. 
 Sinon, réponds normalement à la question avec tes connaissances générales.`;
