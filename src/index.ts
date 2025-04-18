@@ -22,6 +22,24 @@ import { EchoBot } from './bot';
 
 // Create HTTP server.
 const server = restify.createServer();
+
+server.get('/', (req, res, next) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+
+    if (mode === 'subscribe' && token === verifyToken) {
+        console.log('✅ Webhook WhatsApp vérifié avec succès.');
+        res.send(200, challenge);
+    } else {
+        console.error('❌ Échec de la vérification du webhook WhatsApp.');
+        res.send(403, 'Forbidden');
+    }
+
+    return next();
+});
+
 server.use(restify.plugins.bodyParser());
 
 server.listen(process.env.port || process.env.PORT || 3978, () => {
